@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 export default function Login() {
   const { login } = useAuth();
   const [email, setEmail] = useState('admin@regulasus.gov.br');
-  const [senha, setSenha] = useState('123456');
+  const [senha, setSenha] = useState('9836Gx#E');
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(false);
 
@@ -47,14 +47,14 @@ export default function Login() {
             <Shield className="w-6 h-6 text-[#f0cc82]" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white tracking-tight">RegulaSUS</h1>
-            <p className="text-xs text-slate-400">Gestão Regulatória, Absenteísmo e Tarefas</p>
+            <h1 className="text-xl font-bold text-white tracking-tight">Nucleo de Regulação Assistencial - NRA</h1>
+            <p className="text-xs text-slate-400">Sistema de Acompanhamento, Absenteísmo e Tarefas</p>
           </div>
         </div>
 
         <div className="mb-5 p-3 rounded-xl bg-slate-950/75 border border-slate-800 text-xs text-slate-300 flex items-center gap-2.5">
           <Lock className="w-4 h-4 text-[#C8963C] shrink-0" />
-          <span>Acesso exclusivo para profissionais autorizados (PostgreSQL Neon).</span>
+          <span>Acesso exclusivo para administrativos autorizados.</span>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
