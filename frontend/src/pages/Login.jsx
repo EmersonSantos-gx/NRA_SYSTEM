@@ -1,17 +1,29 @@
 import { useState } from 'react';
 import { Shield, Lock } from 'lucide-react';
 
-// Fallback seguro para funcionamento tanto no preview isolado quanto integrado ao AuthContext
-let useAuthHook = null;
-try {
-  // Em projetos locais com AuthContext, utilize o import abaixo:
-  // import { useAuth } from '../contexts/AuthContext';
-} catch {
-  useAuthHook = null;
-}
+// Fallback seguro caso o componente seja compilado isoladamente ou dentro do projeto
+const fallbackApiBaseUrl = (() => {
+  if (typeof window !== 'undefined') {
+    const isLocalhost =
+      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (isLocalhost) {
+      return 'http://localhost:3001/api';
+    }
+  }
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) {
+      return import.meta.env.VITE_API_URL;
+    }
+  } catch {
+    // Ignora ambiente sem import.meta.env
+  }
+  return '/api';
+})();
 
-export default function Login({ onLogin }) {
-  const auth = typeof useAuthHook === 'function' ? useAuthHook() : null;
+export default function Login({ onLogin, authContext, apiBaseUrl }) {
+  // Integração segura com AuthContext recebido via prop ou contexto global
+  const auth = authContext || null;
+  const baseUrlAtiva = apiBaseUrl || fallbackApiBaseUrl;
 
   // Campos iniciam vazios para exigir digitação manual das credenciais
   const [email, setEmail] = useState('');
@@ -19,31 +31,78 @@ export default function Login({ onLogin }) {
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(false);
 
+  // Normaliza a base da API para evitar barras duplicadas em produção ou dev
+  function resolverUrlLogin() {
+    const baseLimpa = String(baseUrlAtiva || '/api').replace(/\/+$/, '');
+    return `${baseLimpa}/auth/login`;
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setErro('');
     setCarregando(true);
+
     try {
-      if (auth?.login) {
-        await auth.login(email, senha);
-      } else if (onLogin) {
-        await onLogin(email, senha);
-      } else {
-        const apiUrl = import.meta.env?.VITE_API_URL || 'http://localhost:3001/api';
-        const resp = await fetch(`${apiUrl}/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, senha })
-        });
-        const data = await resp.json();
-        if (!resp.ok) {
-          throw new Error(data?.erro || 'Credenciais inválidas.');
-        }
-        localStorage.setItem('regulasus_token', data.token);
-        window.location.reload();
+      const emailLimpo = email.trim();
+
+      if (typeof auth?.login === 'function') {
+        await auth.login(emailLimpo, senha);
+        return;
       }
+
+      if (typeof onLogin === 'function') {
+        await onLogin(emailLimpo, senha);
+        return;
+      }
+
+      const urlLogin = resolverUrlLogin();
+      const resp = await fetch(urlLogin, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailLimpo, senha })
+      });
+
+      let data = {};
+      try {
+        data = await resp.json();
+      } catch {
+        data = {};
+      }
+
+      if (!resp.ok) {
+        throw new Error(data?.erro || `Falha na autenticação (HTTP ${resp.status}).`);
+      }
+
+      if (!data?.token) {
+        throw new Error('Resposta do servidor sem token de autenticação.');
+      }
+
+      localStorage.setItem('regulasus_token', data.token);
+      window.location.reload();
     } catch (err) {
-      setErro(err.response?.data?.erro || err.message || 'Não foi possível conectar ao servidor.');
+      // Erros nativos de rede ou bloqueio de CORS costumam vir como TypeError ("Failed to fetch")
+      const ehErroDeRede =
+        err instanceof TypeError ||
+        /failed to fetch|networkerror|load failed|cors/i.test(String(err?.message || ''));
+
+      if (ehErroDeRede) {
+        const urlTentada = resolverUrlLogin();
+        const emLocalhost =
+          typeof window !== 'undefined' &&
+          (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+        setErro(
+          emLocalhost
+            ? `Falha de conexão ao acessar ${urlTentada}. Certifique-se de que o back-end esteja rodando na porta 3001 (cd backend && npm run dev) e que VITE_API_URL no frontend/.env não esteja forçando uma URL externa com bloqueio de CORS.`
+            : `Falha de conexão com o servidor (Failed to fetch) ao acessar ${urlTentada}. Verifique as variáveis DATABASE_URL e JWT_SECRET e os logs na Vercel.`
+        );
+      } else {
+        setErro(
+          err?.response?.data?.erro ||
+            err?.message ||
+            'Não foi possível autenticar no sistema.'
+        );
+      }
     } finally {
       setCarregando(false);
     }
