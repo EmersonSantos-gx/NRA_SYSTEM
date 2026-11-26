@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react';
-import { X, User, Shield, CheckCircle2, Calendar } from 'lucide-react';
+import { X, User, Shield, CheckCircle2, Calendar, Activity, ClipboardList } from 'lucide-react';
 import api from '../../services/api';
 import { formatarDataBR, formatarDataHoraBR } from '../../utils/formatters';
 import { InfoBloco } from '../common/Badges';
 
 export default function UsuarioDetalheModal({ usuario, onFechar }) {
   const [acoes, setAcoes] = useState([]);
+  const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
+    setCarregando(true);
     api
       .get(`/usuarios/${usuario.id}/acoes`)
       .then(({ data }) => setAcoes(data))
-      .catch(() => setAcoes([]));
+      .catch(() => setAcoes([]))
+      .finally(() => setCarregando(false));
   }, [usuario.id]);
 
   return (
@@ -20,9 +23,10 @@ export default function UsuarioDetalheModal({ usuario, onFechar }) {
       onClick={onFechar}
     >
       <div
-        className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden shadow-2xl"
+        className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-xl max-h-[88vh] flex flex-col overflow-hidden shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Cabeçalho */}
         <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/70 flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold text-white">{usuario.nome}</h3>
@@ -36,6 +40,7 @@ export default function UsuarioDetalheModal({ usuario, onFechar }) {
           </button>
         </div>
 
+        {/* Corpo com Dados e Histórico */}
         <div className="p-6 overflow-y-auto space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <InfoBloco label="E-mail" valor={usuario.email} IconComponent={User} />
@@ -54,24 +59,36 @@ export default function UsuarioDetalheModal({ usuario, onFechar }) {
 
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-              Últimas Movimentações ({acoes.length})
+              Log de Atividades ({acoes.length})
             </h4>
-            {acoes.length === 0 ? (
-              <p className="text-xs text-slate-500">Nenhuma movimentação registrada.</p>
+
+            {carregando ? (
+              <p className="text-xs text-slate-500">Carregando log...</p>
+            ) : acoes.length === 0 ? (
+              <p className="text-xs text-slate-500">
+                Nenhuma atividade registrada para este usuário.
+              </p>
             ) : (
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                 {acoes.map((a) => (
                   <div
-                    key={a.id}
-                    className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs"
+                    key={`${a.tipo}-${a.id}`}
+                    className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-xs space-y-1"
                   >
-                    <div className="flex justify-between gap-2">
-                      <span className="font-semibold text-white">{a.paciente_nome}</span>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="inline-flex items-center gap-1.5 font-semibold text-white">
+                        {a.tipo === 'TAREFA' ? (
+                          <ClipboardList className="w-3.5 h-3.5 text-[#C8963C]" />
+                        ) : (
+                          <Activity className="w-3.5 h-3.5 text-[#1D9E75]" />
+                        )}
+                        {a.referencia}
+                      </span>
                       <span className="text-[10px] text-slate-500">
                         {formatarDataHoraBR(a.data_hora)}
                       </span>
                     </div>
-                    <p className="text-slate-400 mt-0.5">{a.observacao}</p>
+                    <p className="text-slate-400">{a.descricao}</p>
                   </div>
                 ))}
               </div>
@@ -79,6 +96,7 @@ export default function UsuarioDetalheModal({ usuario, onFechar }) {
           </div>
         </div>
 
+        {/* Rodapé */}
         <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/70 flex justify-end">
           <button
             onClick={onFechar}

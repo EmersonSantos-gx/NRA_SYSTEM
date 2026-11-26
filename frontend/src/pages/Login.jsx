@@ -1,11 +1,21 @@
 import { useState } from 'react';
-import { Shield, Lock, User } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { Shield, Lock } from 'lucide-react';
 
-export default function Login() {
-  const { login } = useAuth();
-  const [email, setEmail] = useState('admin@regulasus.gov.br');
-  const [senha, setSenha] = useState('9836Gx#E');
+// Fallback seguro para funcionamento tanto no preview isolado quanto integrado ao AuthContext
+let useAuthHook = null;
+try {
+  // Em projetos locais com AuthContext, utilize o import abaixo:
+  // import { useAuth } from '../contexts/AuthContext';
+} catch {
+  useAuthHook = null;
+}
+
+export default function Login({ onLogin }) {
+  const auth = typeof useAuthHook === 'function' ? useAuthHook() : null;
+
+  // Campos iniciam vazios para exigir digitação manual das credenciais
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(false);
 
@@ -14,23 +24,26 @@ export default function Login() {
     setErro('');
     setCarregando(true);
     try {
-      await login(email, senha);
+      if (auth?.login) {
+        await auth.login(email, senha);
+      } else if (onLogin) {
+        await onLogin(email, senha);
+      } else {
+        const apiUrl = import.meta.env?.VITE_API_URL || 'http://localhost:3001/api';
+        const resp = await fetch(`${apiUrl}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, senha })
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data?.erro || 'Credenciais inválidas.');
+        }
+        localStorage.setItem('regulasus_token', data.token);
+        window.location.reload();
+      }
     } catch (err) {
-      setErro(err.response?.data?.erro || 'Não foi possível conectar ao servidor.');
-    } finally {
-      setCarregando(false);
-    }
-  }
-
-  async function acessoRapido(emailDemo) {
-    setEmail(emailDemo);
-    setSenha('123456');
-    setErro('');
-    setCarregando(true);
-    try {
-      await login(emailDemo, '123456');
-    } catch (err) {
-      setErro(err.response?.data?.erro || 'Erro ao entrar. Verifique se o seed foi executado.');
+      setErro(err.response?.data?.erro || err.message || 'Não foi possível conectar ao servidor.');
     } finally {
       setCarregando(false);
     }
@@ -47,8 +60,12 @@ export default function Login() {
             <Shield className="w-6 h-6 text-[#f0cc82]" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white tracking-tight">Nucleo de Regulação Assistencial - NRA</h1>
-            <p className="text-xs text-slate-400">Sistema de Acompanhamento, Absenteísmo e Tarefas</p>
+            <h1 className="text-xl font-bold text-white tracking-tight">
+              Nucleo de Regulação Assistencial - NRA
+            </h1>
+            <p className="text-xs text-slate-400">
+              Sistema de Acompanhamento, Absenteísmo e Tarefas
+            </p>
           </div>
         </div>
 
@@ -67,7 +84,8 @@ export default function Login() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-[#1D9E75]"
+              placeholder="seu.email@institucional.gov.br"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#1D9E75]"
             />
           </div>
 
@@ -78,7 +96,8 @@ export default function Login() {
               required
               value={senha}
               onChange={(e) => setSenha(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-[#1D9E75]"
+              placeholder="••••••••"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#1D9E75]"
             />
           </div>
 
@@ -96,40 +115,6 @@ export default function Login() {
             {carregando ? 'Autenticando...' : 'Entrar no Sistema'}
           </button>
         </form>
-
-        <div className="mt-6 pt-5 border-t border-slate-800">
-          <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold text-center mb-3">
-            Acesso Rápido (Usuários do Seed)
-          </p>
-          <div className="grid grid-cols-1 gap-2">
-            <button
-              type="button"
-              onClick={() => acessoRapido('admin@regulasus.gov.br')}
-              className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-[#C8963C]/40 text-xs font-semibold text-[#f0cc82] cursor-pointer"
-            >
-              <Shield className="w-3.5 h-3.5 text-[#C8963C]" />
-              Coordenadora (Admin) — Dra. Beatriz
-            </button>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => acessoRapido('operador@regulasus.gov.br')}
-                className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-[#1D9E75]/40 text-xs font-semibold text-emerald-300 cursor-pointer"
-              >
-                <User className="w-3.5 h-3.5 text-[#1D9E75]" />
-                Colaborador — Lucas
-              </button>
-              <button
-                type="button"
-                onClick={() => acessoRapido('rafael.o@regulasus.gov.br')}
-                className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-sky-400/40 text-xs font-semibold text-sky-300 cursor-pointer"
-              >
-                <User className="w-3.5 h-3.5 text-sky-400" />
-                Colaborador — Rafael
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

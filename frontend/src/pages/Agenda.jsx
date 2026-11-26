@@ -14,6 +14,43 @@ import { formatarDataBR, isMenorDeIdade } from '../utils/formatters';
 import { STATUS_CONFIG, PrioridadeBadge } from '../components/common/Badges';
 import WhatsAppAgendaModal from '../components/modals/WhatsAppAgendaModal';
 
+// Máscara automática DD/MM/AAAA
+function aplicarMascaraDataBR(valor) {
+  const d = String(valor || '').replace(/\D/g, '').slice(0, 8);
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+}
+
+// Converte DD/MM/AAAA -> YYYY-MM-DD para o PostgreSQL (retorna null se inválida)
+function converterDataBRParaISO(dataBR) {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(dataBR || '').trim());
+  if (!m) return null;
+  const dia = parseInt(m[1], 10);
+  const mes = parseInt(m[2], 10);
+  const ano = parseInt(m[3], 10);
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31 || ano < 2000 || ano > 2100) return null;
+  const dt = new Date(ano, mes - 1, dia);
+  if (dt.getFullYear() !== ano || dt.getMonth() !== mes - 1 || dt.getDate() !== dia) return null;
+  return `${String(ano).padStart(4, '0')}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+}
+
+// Máscara automática 24h HH:MM
+function aplicarMascaraHora24(valor) {
+  const d = String(valor || '').replace(/\D/g, '').slice(0, 4);
+  if (d.length <= 2) return d;
+  return `${d.slice(0, 2)}:${d.slice(2)}`;
+}
+
+// Valida formato 24h (00:00 até 23:59)
+function validarHora24(hora) {
+  const m = /^(\d{2}):(\d{2})$/.exec(String(hora || '').trim());
+  if (!m) return false;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  return h >= 0 && h <= 23 && min >= 0 && min <= 59;
+}
+
 export default function Agenda({
   agendas,
   procedimentos,
@@ -24,7 +61,7 @@ export default function Agenda({
 }) {
   const [profissionalNome, setProfissionalNome] = useState('');
   const [procedimentoId, setProcedimentoId] = useState(procedimentos[0]?.id || '');
-  const [dataAtendimento, setDataAtendimento] = useState('');
+  const [dataAtendimentoBR, setDataAtendimentoBR] = useState('');
   const [horaInicio, setHoraInicio] = useState('08:00');
   const [localAtendimento, setLocalAtendimento] = useState('PAM Salgadinho Sede');
   const [limiteVagas, setLimiteVagas] = useState(10);
@@ -60,17 +97,27 @@ export default function Agenda({
 
   async function handleCriarAgenda(e) {
     e.preventDefault();
+    const dataISO = converterDataBRParaISO(dataAtendimentoBR);
+    if (!dataISO) {
+      onNotificar('Informe uma data válida no formato DD/MM/AAAA.', 'erro');
+      return;
+    }
+    if (!validarHora24(horaInicio)) {
+      onNotificar('Informe um horário válido no padrão 24h (ex: 08:00 ou 14:30).', 'erro');
+      return;
+    }
+
     try {
       const { data } = await api.post('/agendas', {
         profissional_nome: profissionalNome.trim(),
         procedimento_id: procedimentoId || null,
-        data_atendimento: dataAtendimento,
+        data_atendimento: dataISO,
         hora_inicio: horaInicio,
         local_atendimento: localAtendimento.trim(),
         limite_vagas: Number(limiteVagas)
       });
       setProfissionalNome('');
-      setDataAtendimento('');
+      setDataAtendimentoBR('');
       setAgendaSelecionadaId(data.id);
       await onRecarregar();
       onNotificar(`Agenda criada com limite de ${limiteVagas} vaga(s).`);
@@ -81,10 +128,16 @@ export default function Agenda({
 
   async function handleAlocarPaciente(acompanhamentoId) {
     if (!agendaAtiva) return;
+    const horaAlvo = horarioSlot || agendaAtiva.hora_inicio;
+    if (!validarHora24(horaAlvo)) {
+      onNotificar('Informe um horário individual válido no padrão 24h (HH:MM).', 'erro');
+      return;
+    }
+
     try {
       await api.post(`/agendas/${agendaAtiva.id}/pacientes`, {
         acompanhamento_id: acompanhamentoId,
-        horario_slot: horarioSlot || agendaAtiva.hora_inicio
+        horario_slot: horaAlvo
       });
       await onRecarregar();
       onNotificar('Paciente adicionado à agenda e marcado na fila.');
@@ -134,7 +187,7 @@ export default function Agenda({
           Agenda por Profissional (Slots de Vagas)
         </h2>
         <p className="text-sm text-slate-400 mt-0.5">
-          Crie grupos de atendimento com limite de vagas, selecione os pacientes e envie o aviso individual via WhatsApp.
+          Crie grupos de atendimento (data DD/MM/AAAA e horário 24h), selecione os pacientes e envie o aviso individual via WhatsApp.
         </p>
       </div>
 
@@ -172,24 +225,30 @@ export default function Agenda({
         </div>
 
         <div>
-          <label className="block text-xs text-slate-300 mb-1">Data *</label>
+          <label className="block text-xs text-slate-300 mb-1">Data (DD/MM/AAAA) *</label>
           <input
-            type="date"
+            type="text"
+            inputMode="numeric"
             required
-            value={dataAtendimento}
-            onChange={(e) => setDataAtendimento(e.target.value)}
-            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs sm:text-sm text-white"
+            maxLength={10}
+            value={dataAtendimentoBR}
+            onChange={(e) => setDataAtendimentoBR(aplicarMascaraDataBR(e.target.value))}
+            placeholder="DD/MM/AAAA"
+            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs sm:text-sm font-mono text-white"
           />
         </div>
 
         <div>
-          <label className="block text-xs text-slate-300 mb-1">Horário *</label>
+          <label className="block text-xs text-slate-300 mb-1">Horário 24h (HH:MM) *</label>
           <input
-            type="time"
+            type="text"
+            inputMode="numeric"
             required
+            maxLength={5}
             value={horaInicio}
-            onChange={(e) => setHoraInicio(e.target.value)}
-            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs sm:text-sm text-white"
+            onChange={(e) => setHoraInicio(aplicarMascaraHora24(e.target.value))}
+            placeholder="08:00"
+            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs sm:text-sm font-mono text-white"
           />
         </div>
 
@@ -247,7 +306,10 @@ export default function Agenda({
               return (
                 <div
                   key={ag.id}
-                  onClick={() => setAgendaSelecionadaId(ag.id)}
+                  onClick={() => {
+                    setAgendaSelecionadaId(ag.id);
+                    setHorarioSlot(ag.hora_inicio);
+                  }}
                   className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-2.5 ${
                     selecionada
                       ? 'bg-[#085041]/25 border-[#1D9E75]/60 shadow-lg'
@@ -278,7 +340,7 @@ export default function Agenda({
                   <div className="flex items-center justify-between text-xs text-slate-300">
                     <span className="flex items-center gap-1">
                       <CalendarDays className="w-3.5 h-3.5 text-[#1D9E75]" />
-                      {formatarDataBR(ag.data_atendimento)} • {ag.hora_inicio}
+                      {formatarDataBR(ag.data_atendimento)} • {ag.hora_inicio}h
                     </span>
                     <span
                       className={`font-bold ${
@@ -319,7 +381,7 @@ export default function Agenda({
                       {agendaAtiva.profissional_nome}
                     </h3>
                     <p className="text-xs text-slate-400">
-                      {formatarDataBR(agendaAtiva.data_atendimento)} às {agendaAtiva.hora_inicio} —{' '}
+                      {formatarDataBR(agendaAtiva.data_atendimento)} às {agendaAtiva.hora_inicio}h —{' '}
                       {agendaAtiva.local_atendimento}
                     </p>
                   </div>
@@ -351,7 +413,7 @@ export default function Agenda({
                           <div className="space-y-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                                Vaga #{idx + 1} • {slot.horario_slot}
+                                Vaga #{idx + 1} • {slot.horario_slot}h
                               </span>
                               <span className="text-sm font-semibold text-white">
                                 {slot.nome_paciente}
@@ -372,7 +434,7 @@ export default function Agenda({
                               {slot.cns
                                 ? `CNS: ${formatarCNS(slot.cns)}`
                                 : `CPF: ${formatarCPF(slot.cpf)}`}{' '}
-                              • Tel: {slot.telefone || '—'}
+                              - Tel: {slot.telefone || '—'}
                               {menor && slot.nome_responsavel
                                 ? ` • Resp.: ${slot.nome_responsavel}`
                                 : ''}
@@ -412,12 +474,15 @@ export default function Agenda({
                     Adicionar Pacientes nesta Agenda
                   </h4>
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-slate-400">Horário individual:</span>
+                    <span className="text-[11px] text-slate-400">Horário 24h (HH:MM):</span>
                     <input
-                      type="time"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={5}
                       value={horarioSlot || agendaAtiva.hora_inicio}
-                      onChange={(e) => setHorarioSlot(e.target.value)}
-                      className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white"
+                      onChange={(e) => setHorarioSlot(aplicarMascaraHora24(e.target.value))}
+                      placeholder="08:00"
+                      className="w-20 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-center text-white"
                     />
                   </div>
                 </div>

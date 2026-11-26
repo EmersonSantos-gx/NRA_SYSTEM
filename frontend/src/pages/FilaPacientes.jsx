@@ -1,5 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Search, Table, Columns, Download, Plus, MessageCircle } from 'lucide-react';
+import {
+  Search,
+  Table,
+  Columns,
+  Download,
+  Plus,
+  MessageCircle,
+  RotateCcw
+} from 'lucide-react';
+import api from '../services/api';
 import { somenteDigitos, formatarCNS, formatarCPF } from '../utils/validarCNS';
 import {
   calcularDiasEspera,
@@ -26,6 +35,7 @@ export default function FilaPacientes({
   onVerDetalhes,
   onAlternarAviso,
   onConfirmarComparecimento,
+  onVoltarParaNovo,
   onIniciarTransicao,
   onNotificar
 }) {
@@ -34,23 +44,62 @@ export default function FilaPacientes({
   const [filtroPrioridade, setFiltroPrioridade] = useState('TODAS');
   const [filtroStatus, setFiltroStatus] = useState(filtroStatusInicial || 'TODOS');
   const [modo, setModo] = useState('tabela');
+  const [processandoNovoId, setProcessandoNovoId] = useState(null);
+  const [statusLocalOverride, setStatusLocalOverride] = useState({});
+
+  const listaAtualizada = useMemo(
+    () =>
+      acompanhamentos.map((item) =>
+        statusLocalOverride[item.id]
+          ? {
+              ...item,
+              status: statusLocalOverride[item.id],
+              motivo_pendencia: '',
+              data_agendamento: '',
+              hora_agendamento: '',
+              local_agendamento: '',
+              aviso_confirmado: false
+            }
+          : item
+      ),
+    [acompanhamentos, statusLocalOverride]
+  );
+
+  async function handleCliqueVoltarNovo(id) {
+    try {
+      setProcessandoNovoId(id);
+      if (onVoltarParaNovo) {
+        await onVoltarParaNovo(id);
+      } else {
+        await api.patch(`/acompanhamentos/${id}/status`, { status_destino: 'NOVO' });
+        setStatusLocalOverride((prev) => ({ ...prev, [id]: 'NOVO' }));
+        if (onNotificar) onNotificar('Paciente retornado para a fila como Novo.');
+      }
+    } catch (err) {
+      if (onNotificar) {
+        onNotificar(err.response?.data?.erro || 'Erro ao retornar paciente para Novo.', 'erro');
+      }
+    } finally {
+      setProcessandoNovoId(null);
+    }
+  }
 
   const kpis = useMemo(
     () => ({
-      NOVO: acompanhamentos.filter((a) => a.status === 'NOVO').length,
-      PENDENTE: acompanhamentos.filter((a) => a.status === 'PENDENTE').length,
-      MARCADO: acompanhamentos.filter((a) => a.status === 'MARCADO').length,
-      REALIZADO: acompanhamentos.filter((a) => a.status === 'REALIZADO').length,
-      FALTOU: acompanhamentos.filter((a) => a.status === 'FALTOU').length
+      NOVO: listaAtualizada.filter((a) => a.status === 'NOVO').length,
+      PENDENTE: listaAtualizada.filter((a) => a.status === 'PENDENTE').length,
+      MARCADO: listaAtualizada.filter((a) => a.status === 'MARCADO').length,
+      REALIZADO: listaAtualizada.filter((a) => a.status === 'REALIZADO').length,
+      FALTOU: listaAtualizada.filter((a) => a.status === 'FALTOU').length
     }),
-    [acompanhamentos]
+    [listaAtualizada]
   );
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     const digitos = somenteDigitos(busca);
 
-    return acompanhamentos.filter((item) => {
+    return listaAtualizada.filter((item) => {
       if (filtroStatus !== 'TODOS' && item.status !== filtroStatus) return false;
       if (filtroProcedimento !== 'TODOS' && item.procedimento_id !== filtroProcedimento) return false;
       if (filtroPrioridade !== 'TODAS' && item.prioridade !== filtroPrioridade) return false;
@@ -64,12 +113,12 @@ export default function FilaPacientes({
       }
       return true;
     });
-  }, [acompanhamentos, busca, filtroProcedimento, filtroPrioridade, filtroStatus]);
+  }, [listaAtualizada, busca, filtroProcedimento, filtroPrioridade, filtroStatus]);
 
   function handleExportarCSV() {
     const cabecalhos = [
       'Paciente',
-      'CNS / CPF',
+      'Documento',
       'Prioridade',
       'Procedimento',
       'Status',
@@ -385,6 +434,20 @@ export default function FilaPacientes({
                                 className="px-2.5 py-1 rounded-lg bg-[#085041] hover:bg-[#1D9E75] text-white text-[11px] font-semibold cursor-pointer"
                               >
                                 Reagendar
+                              </button>
+                            )}
+
+                            {/* Botão para retornar o paciente à fila inicial como NOVO */}
+                            {item.status !== 'NOVO' && (
+                              <button
+                                type="button"
+                                disabled={processandoNovoId === item.id}
+                                onClick={() => handleCliqueVoltarNovo(item.id)}
+                                title="Voltar para fila como Novo"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 disabled:opacity-50 text-sky-300 border border-sky-400/35 text-[11px] font-semibold cursor-pointer"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                {processandoNovoId === item.id ? '...' : 'Novo'}
                               </button>
                             )}
                           </div>

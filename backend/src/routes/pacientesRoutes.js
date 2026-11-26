@@ -61,7 +61,7 @@ function isMenorDeIdade(dataNascimento) {
   return idade < 18;
 }
 
-// GET /api/acompanhamentos — Lista fila completa (agora retornando CNS e CPF)
+// GET /api/acompanhamentos — Lista fila completa (retornando CNS e CPF)
 router.get('/', async (req, res) => {
   try {
     const { rows } = await db.query(`
@@ -191,7 +191,6 @@ router.post('/', async (req, res) => {
 
     await client.query('BEGIN');
 
-    // Procura paciente existente pelo CNS ou pelo CPF
     let pacienteExistente = null;
     if (cnsLimpo) {
       const r = await client.query('SELECT id, TRIM(cns) AS cns, TRIM(cpf) AS cpf FROM pacientes WHERE cns = $1', [cnsLimpo]);
@@ -204,8 +203,6 @@ router.post('/', async (req, res) => {
 
     let pacienteId;
     let notaSubstituicao = '';
-
-    // Se tem CNS e a opção de desvincular CPF está ativa, o CPF salvo será NULL
     const cpfParaGravar = cnsLimpo && remover_cpf_ao_vincular_cns ? null : (cpfLimpo || null);
 
     if (pacienteExistente) {
@@ -383,7 +380,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// PATCH /api/acompanhamentos/:id/status — Muda status (PENDENTE, MARCADO, REALIZADO, FALTOU)
+// PATCH /api/acompanhamentos/:id/status — Muda status (NOVO, PENDENTE, MARCADO, REALIZADO, FALTOU)
 router.patch('/:id/status', async (req, res) => {
   const client = await db.pool.connect();
   try {
@@ -413,7 +410,21 @@ router.patch('/:id/status', async (req, res) => {
 
     await client.query('BEGIN');
 
-    if (status_destino === 'PENDENTE') {
+    if (status_destino === 'NOVO') {
+      observacaoLog = 'Paciente retornado para a fila inicial (Status: Novo).';
+      await client.query(
+        `UPDATE acompanhamentos
+         SET status = 'NOVO',
+             motivo_pendencia = NULL,
+             data_agendamento = NULL,
+             hora_agendamento = NULL,
+             local_agendamento = NULL,
+             aviso_confirmado = FALSE,
+             atualizado_em = NOW()
+         WHERE id = $1`,
+        [req.params.id]
+      );
+    } else if (status_destino === 'PENDENTE') {
       if (!motivo_pendencia?.trim()) {
         await client.query('ROLLBACK');
         return res.status(400).json({ erro: 'Motivo da pendência é obrigatório.' });
