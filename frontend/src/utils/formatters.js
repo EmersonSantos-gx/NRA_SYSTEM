@@ -93,7 +93,7 @@ export function montarLinkWhatsApp(paciente) {
   }\n• Data: ${formatarDataBR(paciente.data_agendamento)}${
     paciente.hora_agendamento ? ` às ${paciente.hora_agendamento}` : ''
   }\n• Local: ${
-    paciente.local_agendamento || 'Unidade de Referência'
+    paciente.local_agendamento || 'PAM Salgadinho Sede'
   }\n\nPor favor, responda SIM para confirmar seu comparecimento.`;
   return `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`;
 }

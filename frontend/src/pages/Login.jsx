@@ -1,108 +1,45 @@
 import { useState } from 'react';
 import { Shield, Lock } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { API_BASE_URL } from '../services/api';
 
-// Fallback seguro caso o componente seja compilado isoladamente ou dentro do projeto
-const fallbackApiBaseUrl = (() => {
-  if (typeof window !== 'undefined') {
-    const isLocalhost =
-      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    if (isLocalhost) {
-      return 'http://localhost:3001/api';
-    }
-  }
-  try {
-    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) {
-      return import.meta.env.VITE_API_URL;
-    }
-  } catch {
-    // Ignora ambiente sem import.meta.env
-  }
-  return '/api';
-})();
+export default function Login({ onLogin }) {
+  const auth = useAuth();
 
-export default function Login({ onLogin, authContext, apiBaseUrl }) {
-  // Integração segura com AuthContext recebido via prop ou contexto global
-  const auth = authContext || null;
-  const baseUrlAtiva = apiBaseUrl || fallbackApiBaseUrl;
-
-  // Campos iniciam vazios para exigir digitação manual das credenciais
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(false);
 
-  // Normaliza a base da API para evitar barras duplicadas em produção ou dev
-  function resolverUrlLogin() {
-    const baseLimpa = String(baseUrlAtiva || '/api').replace(/\/+$/, '');
-    return `${baseLimpa}/auth/login`;
-  }
-
   async function handleSubmit(e) {
     e.preventDefault();
     setErro('');
     setCarregando(true);
-
     try {
-      const emailLimpo = email.trim();
-
-      if (typeof auth?.login === 'function') {
-        await auth.login(emailLimpo, senha);
-        return;
-      }
-
-      if (typeof onLogin === 'function') {
-        await onLogin(emailLimpo, senha);
-        return;
-      }
-
-      const urlLogin = resolverUrlLogin();
-      const resp = await fetch(urlLogin, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: emailLimpo, senha })
-      });
-
-      let data = {};
-      try {
-        data = await resp.json();
-      } catch {
-        data = {};
-      }
-
-      if (!resp.ok) {
-        throw new Error(data?.erro || `Falha na autenticação (HTTP ${resp.status}).`);
-      }
-
-      if (!data?.token) {
-        throw new Error('Resposta do servidor sem token de autenticação.');
-      }
-
-      localStorage.setItem('regulasus_token', data.token);
-      window.location.reload();
-    } catch (err) {
-      // Erros nativos de rede ou bloqueio de CORS costumam vir como TypeError ("Failed to fetch")
-      const ehErroDeRede =
-        err instanceof TypeError ||
-        /failed to fetch|networkerror|load failed|cors/i.test(String(err?.message || ''));
-
-      if (ehErroDeRede) {
-        const urlTentada = resolverUrlLogin();
-        const emLocalhost =
-          typeof window !== 'undefined' &&
-          (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-
-        setErro(
-          emLocalhost
-            ? `Falha de conexão ao acessar ${urlTentada}. Certifique-se de que o back-end esteja rodando na porta 3001 (cd backend && npm run dev) e que VITE_API_URL no frontend/.env não esteja forçando uma URL externa com bloqueio de CORS.`
-            : `Falha de conexão com o servidor (Failed to fetch) ao acessar ${urlTentada}. Verifique as variáveis DATABASE_URL e JWT_SECRET e os logs na Vercel.`
-        );
+      if (auth?.login) {
+        await auth.login(email, senha);
+      } else if (onLogin) {
+        await onLogin(email, senha);
       } else {
-        setErro(
-          err?.response?.data?.erro ||
-            err?.message ||
-            'Não foi possível autenticar no sistema.'
-        );
+        const resp = await fetch(`${API_BASE_URL}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, senha })
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data?.erro || 'Credenciais inválidas.');
+        }
+        localStorage.setItem('regulasus_token', data.token);
+        window.location.reload();
       }
+    } catch (err) {
+      setErro(
+        err?.mensagemAmigavel ||
+          err?.response?.data?.erro ||
+          err?.message ||
+          'Não foi possível conectar ao servidor.'
+      );
     } finally {
       setCarregando(false);
     }
@@ -120,7 +57,7 @@ export default function Login({ onLogin, authContext, apiBaseUrl }) {
           </div>
           <div>
             <h1 className="text-xl font-bold text-white tracking-tight">
-              Nucleo de Regulação Assistencial - NRA
+              Núcleo de Regulação Assistencial - NRA
             </h1>
             <p className="text-xs text-slate-400">
               Sistema de Acompanhamento, Absenteísmo e Tarefas

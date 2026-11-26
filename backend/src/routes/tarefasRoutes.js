@@ -5,7 +5,6 @@ const { autenticar, apenasAdmin } = require('../middlewares/authMiddleware');
 const router = express.Router();
 router.use(autenticar);
 
-// GET /api/tarefas — Coordenador vê tarefas que distribuiu; Colaborador vê apenas as suas
 router.get('/', async (req, res) => {
   try {
     const isAdmin = req.usuario.perfil === 'ADMIN';
@@ -22,8 +21,8 @@ router.get('/', async (req, res) => {
         t.anexo_nome, t.anexo_tipo, t.anexo_base64,
         t.criado_em, t.recebido_em, t.iniciado_em, t.finalizado_em, t.concluido_em
        FROM tarefas t
-       JOIN usuarios coord ON coord.id = t.coordenador_id
-       JOIN usuarios colab ON colab.id = t.colaborador_id
+       LEFT JOIN usuarios coord ON coord.id = t.coordenador_id
+       LEFT JOIN usuarios colab ON colab.id = t.colaborador_id
        WHERE ${filtroSql}
        ORDER BY t.criado_em DESC`,
       [req.usuario.id]
@@ -36,7 +35,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /api/tarefas — Coordenador distribui tarefa diretamente para um colaborador
 router.post('/', apenasAdmin, async (req, res) => {
   try {
     const { titulo, descricao, colaborador_id, prioridade, prazo } = req.body;
@@ -66,7 +64,6 @@ router.post('/', apenasAdmin, async (req, res) => {
   }
 });
 
-// PATCH /api/tarefas/:id/receber — Colaborador avisa que recebeu a tarefa
 router.patch('/:id/receber', async (req, res) => {
   try {
     const { rows } = await db.query(
@@ -87,7 +84,6 @@ router.patch('/:id/receber', async (req, res) => {
   }
 });
 
-// PATCH /api/tarefas/:id/iniciar — Colaborador avisa que iniciou a execução
 router.patch('/:id/iniciar', async (req, res) => {
   try {
     const { rows } = await db.query(
@@ -110,7 +106,6 @@ router.patch('/:id/iniciar', async (req, res) => {
   }
 });
 
-// PATCH /api/tarefas/:id/devolver — Colaborador envia devolutiva + anexo opcional ao coordenador
 router.patch('/:id/devolver', async (req, res) => {
   try {
     const { parecer_colaborador, anexo_nome, anexo_tipo, anexo_base64 } = req.body;
@@ -150,7 +145,6 @@ router.patch('/:id/devolver', async (req, res) => {
   }
 });
 
-// PATCH /api/tarefas/:id/concluir — Coordenador valida e conclui
 router.patch('/:id/concluir', apenasAdmin, async (req, res) => {
   try {
     const { rows } = await db.query(
@@ -168,7 +162,6 @@ router.patch('/:id/concluir', apenasAdmin, async (req, res) => {
   }
 });
 
-// PATCH /api/tarefas/:id/reabrir — Coordenador devolve para ajustes
 router.patch('/:id/reabrir', apenasAdmin, async (req, res) => {
   try {
     const { motivo } = req.body;
