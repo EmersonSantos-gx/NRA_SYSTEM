@@ -8,7 +8,9 @@ import {
   Play,
   RotateCcw,
   User,
-  Clock
+  Clock,
+  CalendarClock,
+  CalendarCheck2
 } from 'lucide-react';
 import api from '../services/api';
 import { formatarCNS, formatarCPF } from '../utils/validarCNS';
@@ -17,7 +19,7 @@ import { STATUS_CONFIG, PrioridadeBadge } from '../components/common/Badges';
 
 const STATUS_DEMANDA_CFG = {
   ENVIADA_COORDENACAO: {
-    label: 'Aguardando Recebimento (Coordenação)',
+    label: 'Entrada / Enviada à Coordenação',
     bg: 'bg-amber-500/15',
     text: 'text-amber-300',
     border: 'border-amber-400/40'
@@ -35,10 +37,22 @@ const STATUS_DEMANDA_CFG = {
     border: 'border-indigo-400/40'
   },
   EM_EXECUCAO: {
-    label: 'Em Execução pelo Responsável',
+    label: 'Em Execução',
     bg: 'bg-purple-500/15',
     text: 'text-purple-200',
     border: 'border-purple-400/40'
+  },
+  AGUARDANDO_MARCACAO: {
+    label: 'Aguardando Marcação',
+    bg: 'bg-orange-500/15',
+    text: 'text-orange-200',
+    border: 'border-orange-400/40'
+  },
+  MARCADO: {
+    label: 'Marcado',
+    bg: 'bg-teal-500/20',
+    text: 'text-teal-200',
+    border: 'border-teal-400/45'
   },
   DEVOLVIDA_COORDENACAO: {
     label: 'Devolvida à Coordenação',
@@ -72,6 +86,7 @@ export default function Demandas({
   onNotificar
 }) {
   const isCoordenador = usuarioLogado?.perfil === 'ADMIN';
+  const isSolicitante = usuarioLogado?.perfil === 'SOLICITANTE';
 
   // Formulário de abertura/envio de demanda para a Coordenação
   const [titulo, setTitulo] = useState('');
@@ -82,19 +97,25 @@ export default function Demandas({
   const [enviando, setEnviando] = useState(false);
 
   // Filtros de visualização
-  const [filtroAba, setFiltroAba] = useState(isCoordenador ? 'TRIAGEM' : 'MINHAS_RECEBIDAS');
+  const [filtroAba, setFiltroAba] = useState(
+    isCoordenador ? 'TRIAGEM' : isSolicitante ? 'TODAS_SOLICITANTE' : 'MINHAS_RECEBIDAS'
+  );
 
   // Estados de encaminhamento pela Coordenadora
   const [encaminhandoId, setEncaminhandoId] = useState(null);
   const [responsavelId, setResponsavelId] = useState('');
   const [parecerCoord, setParecerCoord] = useState('');
 
+  // Estado de marcação
+  const [marcandoId, setMarcandoId] = useState(null);
+  const [detalhesMarcacao, setDetalhesMarcacao] = useState('');
+
   // Estados de devolutiva pelo Colaborador Responsável
   const [devolvendoId, setDevolvendoId] = useState(null);
   const [parecerResp, setParecerResp] = useState('');
 
   const colaboradoresAtivos = useMemo(
-    () => usuarios.filter((u) => u.ativo),
+    () => usuarios.filter((u) => u.ativo && u.perfil !== 'SOLICITANTE'),
     [usuarios]
   );
 
@@ -104,19 +125,41 @@ export default function Demandas({
         ['ENVIADA_COORDENACAO', 'RECEBIDA_COORDENACAO'].includes(d.status)
       ).length,
       EM_FLUXO: demandas.filter((d) =>
-        ['ENCAMINHADA', 'EM_EXECUCAO', 'DEVOLVIDA_COORDENACAO'].includes(d.status)
+        [
+          'ENCAMINHADA',
+          'EM_EXECUCAO',
+          'AGUARDANDO_MARCACAO',
+          'MARCADO',
+          'DEVOLVIDA_COORDENACAO'
+        ].includes(d.status)
       ).length,
       MINHAS_RECEBIDAS: demandas.filter(
         (d) =>
           d.responsavel_id === usuarioLogado.id &&
-          ['ENCAMINHADA', 'EM_EXECUCAO'].includes(d.status)
+          ['ENCAMINHADA', 'EM_EXECUCAO', 'AGUARDANDO_MARCACAO', 'MARCADO'].includes(d.status)
       ).length,
       MINHAS_ENVIADAS: demandas.filter((d) => d.solicitante_id === usuarioLogado.id).length,
+      TODAS_SOLICITANTE: demandas.length,
+      AGUARDANDO_SOL: demandas.filter((d) => d.status === 'AGUARDANDO_MARCACAO').length,
+      MARCADAS_SOL: demandas.filter((d) => d.status === 'MARCADO').length,
       CONCLUIDAS: demandas.filter((d) => d.status === 'CONCLUIDA').length
     };
   }, [demandas, usuarioLogado.id]);
 
   const listaFiltrada = useMemo(() => {
+    if (isSolicitante) {
+      if (filtroAba === 'AGUARDANDO_SOL') {
+        return demandas.filter((d) => d.status === 'AGUARDANDO_MARCACAO');
+      }
+      if (filtroAba === 'MARCADAS_SOL') {
+        return demandas.filter((d) => d.status === 'MARCADO');
+      }
+      if (filtroAba === 'CONCLUIDAS') {
+        return demandas.filter((d) => d.status === 'CONCLUIDA');
+      }
+      return demandas;
+    }
+
     if (filtroAba === 'TRIAGEM') {
       return demandas.filter((d) =>
         ['ENVIADA_COORDENACAO', 'RECEBIDA_COORDENACAO'].includes(d.status)
@@ -124,21 +167,27 @@ export default function Demandas({
     }
     if (filtroAba === 'EM_FLUXO') {
       return demandas.filter((d) =>
-        ['ENCAMINHADA', 'EM_EXECUCAO', 'DEVOLVIDA_COORDENACAO'].includes(d.status)
+        [
+          'ENCAMINHADA',
+          'EM_EXECUCAO',
+          'AGUARDANDO_MARCACAO',
+          'MARCADO',
+          'DEVOLVIDA_COORDENACAO'
+        ].includes(d.status)
       );
     }
     if (filtroAba === 'MINHAS_RECEBIDAS') {
       return demandas.filter(
         (d) =>
           d.responsavel_id === usuarioLogado.id &&
-          ['ENCAMINHADA', 'EM_EXECUCAO'].includes(d.status)
+          ['ENCAMINHADA', 'EM_EXECUCAO', 'AGUARDANDO_MARCACAO', 'MARCADO'].includes(d.status)
       );
     }
     if (filtroAba === 'MINHAS_ENVIADAS') {
       return demandas.filter((d) => d.solicitante_id === usuarioLogado.id);
     }
     return demandas.filter((d) => d.status === 'CONCLUIDA');
-  }, [demandas, filtroAba, usuarioLogado.id]);
+  }, [demandas, filtroAba, usuarioLogado.id, isSolicitante]);
 
   async function handleEnviarDemanda(e) {
     e.preventDefault();
@@ -156,7 +205,8 @@ export default function Demandas({
       setDescricao('');
       setAcompanhamentoId('');
       setPrioridade('NORMAL');
-      if (!isCoordenador) setFiltroAba('MINHAS_ENVIADAS');
+      if (isSolicitante) setFiltroAba('TODAS_SOLICITANTE');
+      else if (!isCoordenador) setFiltroAba('MINHAS_ENVIADAS');
       await onRecarregar();
       onNotificar('Demanda enviada para recebimento da Coordenação.');
     } catch (err) {
@@ -206,6 +256,30 @@ export default function Demandas({
     }
   }
 
+  async function handleAguardandoMarcacao(id) {
+    try {
+      await api.patch(`/demandas/${id}/aguardando-marcacao`);
+      await onRecarregar();
+      onNotificar('Status atualizado para Aguardando Marcação.');
+    } catch (err) {
+      onNotificar(err.response?.data?.erro || 'Erro ao atualizar status.', 'erro');
+    }
+  }
+
+  async function handleMarcarDemanda(id) {
+    try {
+      await api.patch(`/demandas/${id}/marcar`, {
+        detalhes_marcacao: detalhesMarcacao
+      });
+      setMarcandoId(null);
+      setDetalhesMarcacao('');
+      await onRecarregar();
+      onNotificar('Demanda atualizada para Marcado!');
+    } catch (err) {
+      onNotificar(err.response?.data?.erro || 'Erro ao registrar marcação.', 'erro');
+    }
+  }
+
   async function handleDevolverCoordenacao(id) {
     if (!parecerResp.trim()) return;
     try {
@@ -236,32 +310,36 @@ export default function Demandas({
       <div>
         <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
           <GitPullRequestArrow className="w-6 h-6 text-[#1D9E75]" />
-          Fluxo de Envio e Encaminhamento de Demandas
+          Fluxo de Envio e Acompanhamento de Demandas
         </h2>
         <p className="text-sm text-slate-400 mt-0.5">
-          Envie pacientes recém-cadastrados ou solicitações para recebimento da Coordenação e direcionamento ao colaborador responsável.
+          {isSolicitante
+            ? 'Envie sua demanda e acompanhe em tempo real o histórico: Entrada, Recebido, Aguardando Marcação e Marcado.'
+            : 'Envie pacientes ou solicitações para recebimento da Coordenação e direcionamento ao colaborador responsável.'}
         </p>
       </div>
 
-      {/* Formulário: Registrar e Enviar Nova Demanda para a Coordenação */}
+      {/* Formulário: Registrar e Enviar Nova Demanda */}
       <form
         onSubmit={handleEnviarDemanda}
         className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-xl"
       >
         <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-300">
           <Send className="w-3.5 h-3.5" />
-          Novo Envio para Recebimento da Coordenação
+          Enviar Nova Demanda para a Coordenação
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
           <div className="md:col-span-2">
-            <label className="block text-xs text-slate-300 mb-1">Assunto / Demanda *</label>
+            <label className="block text-xs text-slate-300 mb-1">
+              Assunto / Nome do Paciente e Solicitação *
+            </label>
             <input
               type="text"
               required
               value={titulo}
               onChange={(e) => setTitulo(e.target.value)}
-              placeholder="Ex: Paciente cadastrado aguardando direcionamento para Cardiologia"
+              placeholder="Ex: Maria da Silva — Solicitação de Consulta Cardiologia"
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white"
             />
           </div>
@@ -293,32 +371,40 @@ export default function Demandas({
             </select>
           </div>
 
-          <div className="md:col-span-2">
-            <label className="block text-xs text-slate-300 mb-1">
-              Vincular Paciente Cadastrado (opcional)
-            </label>
-            <select
-              value={acompanhamentoId}
-              onChange={(e) => setAcompanhamentoId(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white"
-            >
-              <option value="">Sem vínculo específico / Demanda geral</option>
-              {acompanhamentos.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.nome_paciente} — {a.procedimento_nome} ({STATUS_CONFIG[a.status]?.label})
-                </option>
-              ))}
-            </select>
-          </div>
+          {!isSolicitante && acompanhamentos.length > 0 && (
+            <div className="md:col-span-2">
+              <label className="block text-xs text-slate-300 mb-1">
+                Vincular Paciente Cadastrado (opcional)
+              </label>
+              <select
+                value={acompanhamentoId}
+                onChange={(e) => setAcompanhamentoId(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white"
+              >
+                <option value="">Sem vínculo específico / Demanda geral</option>
+                {acompanhamentos.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.nome_paciente} — {a.procedimento_nome} ({STATUS_CONFIG[a.status]?.label})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-          <div className="md:col-span-2 flex flex-col justify-end">
-            <label className="block text-xs text-slate-300 mb-1">Observações / Detalhes</label>
+          <div
+            className={`${
+              !isSolicitante && acompanhamentos.length > 0 ? 'md:col-span-2' : 'md:col-span-4'
+            } flex flex-col justify-end`}
+          >
+            <label className="block text-xs text-slate-300 mb-1">
+              Dados do Paciente (CNS/CPF, Telefone) e Observações
+            </label>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={descricao}
                 onChange={(e) => setDescricao(e.target.value)}
-                placeholder="Informe detalhes para a Coordenadora..."
+                placeholder="Informe CNS/CPF, telefone de contato e detalhes da solicitação..."
                 className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white"
               />
               <button
@@ -327,7 +413,7 @@ export default function Demandas({
                 className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#085041] to-[#1D9E75] text-white text-xs font-semibold shrink-0 cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
-                {enviando ? 'Enviando...' : 'Enviar'}
+                {enviando ? 'Enviando...' : 'Enviar Demanda'}
               </button>
             </div>
           </div>
@@ -336,7 +422,50 @@ export default function Demandas({
 
       {/* Abas de Filtro */}
       <div className="flex items-center gap-2 flex-wrap">
-        {isCoordenador ? (
+        {isSolicitante ? (
+          <>
+            <button
+              onClick={() => setFiltroAba('TODAS_SOLICITANTE')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold border cursor-pointer ${
+                filtroAba === 'TODAS_SOLICITANTE'
+                  ? 'bg-[#085041]/40 text-emerald-200 border-[#1D9E75]/60'
+                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+              }`}
+            >
+              Todas Enviadas ({contadores.TODAS_SOLICITANTE})
+            </button>
+            <button
+              onClick={() => setFiltroAba('AGUARDANDO_SOL')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold border cursor-pointer ${
+                filtroAba === 'AGUARDANDO_SOL'
+                  ? 'bg-orange-500/20 text-orange-200 border-orange-400/50'
+                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+              }`}
+            >
+              Aguardando Marcação ({contadores.AGUARDANDO_SOL})
+            </button>
+            <button
+              onClick={() => setFiltroAba('MARCADAS_SOL')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold border cursor-pointer ${
+                filtroAba === 'MARCADAS_SOL'
+                  ? 'bg-teal-500/20 text-teal-200 border-teal-400/50'
+                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+              }`}
+            >
+              Marcadas ({contadores.MARCADAS_SOL})
+            </button>
+            <button
+              onClick={() => setFiltroAba('CONCLUIDAS')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold border cursor-pointer ${
+                filtroAba === 'CONCLUIDAS'
+                  ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50'
+                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+              }`}
+            >
+              Concluídas ({contadores.CONCLUIDAS})
+            </button>
+          </>
+        ) : isCoordenador ? (
           <>
             <button
               onClick={() => setFiltroAba('TRIAGEM')}
@@ -356,7 +485,7 @@ export default function Demandas({
                   : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
               }`}
             >
-              Encaminhadas / Em Execução ({contadores.EM_FLUXO})
+              Em Andamento / Marcação ({contadores.EM_FLUXO})
             </button>
             <button
               onClick={() => setFiltroAba('CONCLUIDAS')}
@@ -417,6 +546,7 @@ export default function Demandas({
             const catLabel =
               CATEGORIAS.find((c) => c.valor === d.categoria)?.label || d.categoria;
             const ehResponsavel = d.responsavel_id === usuarioLogado.id;
+            const podeGerirMarcacao = isCoordenador || ehResponsavel;
 
             return (
               <div
@@ -451,8 +581,11 @@ export default function Demandas({
                   {d.acompanhamento_id && (
                     <button
                       type="button"
+                      disabled={!onVerPaciente}
                       onClick={() => onVerPaciente && onVerPaciente(d.acompanhamento_id)}
-                      className="inline-flex items-center gap-1.5 text-xs text-sky-300 hover:text-sky-200 bg-sky-500/10 px-3 py-1.5 rounded-lg border border-sky-500/25 cursor-pointer"
+                      className={`inline-flex items-center gap-1.5 text-xs text-sky-300 bg-sky-500/10 px-3 py-1.5 rounded-lg border border-sky-500/25 ${
+                        onVerPaciente ? 'hover:text-sky-200 cursor-pointer' : 'cursor-default'
+                      }`}
                     >
                       <User className="w-3.5 h-3.5" />
                       Paciente: <strong>{d.paciente_nome}</strong> (
@@ -463,25 +596,83 @@ export default function Demandas({
                     </button>
                   )}
 
-                  {/* Fluxo de Participantes */}
+                  {/* Histórico Visual Completo (Entrada -> Recebido -> Aguardando Marcação -> Marcado) */}
+                  <div className="p-3 rounded-xl bg-slate-950/85 border border-slate-800 space-y-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Histórico de Movimentação da Demanda
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                      <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
+                        <span className="text-slate-400">1. Entrada:</span>
+                        <span className="font-semibold text-white">
+                          {formatarDataHoraBR(d.criado_em)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
+                        <span className="text-slate-400">2. Recebido:</span>
+                        <span
+                          className={`font-semibold ${
+                            d.recebido_coord_em ? 'text-sky-300' : 'text-slate-500'
+                          }`}
+                        >
+                          {d.recebido_coord_em
+                            ? formatarDataHoraBR(d.recebido_coord_em)
+                            : 'Aguardando'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
+                        <span className="text-slate-400">3. Aguardando Marcação:</span>
+                        <span
+                          className={`font-semibold ${
+                            d.aguardando_marcacao_em ? 'text-orange-300' : 'text-slate-500'
+                          }`}
+                        >
+                          {d.aguardando_marcacao_em
+                            ? formatarDataHoraBR(d.aguardando_marcacao_em)
+                            : '—'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
+                        <span className="text-slate-400">4. Marcado:</span>
+                        <span
+                          className={`font-semibold ${
+                            d.marcado_em ? 'text-teal-300' : 'text-slate-500'
+                          }`}
+                        >
+                          {d.marcado_em ? formatarDataHoraBR(d.marcado_em) : '—'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {d.detalhes_marcacao && (
+                      <div className="p-2 rounded-lg bg-teal-500/10 border border-teal-500/30 text-xs text-teal-200">
+                        <strong>Informação da Marcação:</strong> {d.detalhes_marcacao}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Responsáveis */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                     <div className="p-2.5 rounded-xl bg-slate-950/75 border border-slate-800">
                       <span className="text-[10px] uppercase text-slate-500 block">
-                        1. Enviado por
+                        Solicitante
                       </span>
                       <span className="font-semibold text-slate-200">{d.solicitante_nome}</span>
                     </div>
                     <div className="p-2.5 rounded-xl bg-slate-950/75 border border-slate-800">
                       <span className="text-[10px] uppercase text-slate-500 block">
-                        2. Coordenação
+                        Coordenação
                       </span>
                       <span className="font-semibold text-[#f0cc82]">
-                        {d.coordenador_nome || 'Aguardando recebimento'}
+                        {d.coordenador_nome || 'Aguardando'}
                       </span>
                     </div>
                     <div className="p-2.5 rounded-xl bg-slate-950/75 border border-slate-800">
                       <span className="text-[10px] uppercase text-slate-500 block">
-                        3. Responsável
+                        Responsável
                       </span>
                       <span className="font-semibold text-emerald-300">
                         {d.responsavel_nome || 'A definir'}
@@ -489,7 +680,6 @@ export default function Demandas({
                     </div>
                   </div>
 
-                  {/* Parecer da Coordenação */}
                   {d.parecer_coordenacao && (
                     <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-400/30 text-xs">
                       <span className="text-[10px] font-bold uppercase text-indigo-300 block">
@@ -499,7 +689,6 @@ export default function Demandas({
                     </div>
                   )}
 
-                  {/* Parecer do Responsável */}
                   {d.parecer_responsavel && (
                     <div className="p-2.5 rounded-xl bg-[#C8963C]/10 border border-[#C8963C]/35 text-xs">
                       <span className="text-[10px] font-bold uppercase text-[#f0cc82] block">
@@ -508,25 +697,14 @@ export default function Demandas({
                       <p className="text-slate-100 mt-0.5">{d.parecer_responsavel}</p>
                     </div>
                   )}
-
-                  <div className="flex flex-wrap gap-3 text-[10px] text-slate-500">
-                    <span>Criada: {formatarDataHoraBR(d.criado_em)}</span>
-                    {d.recebido_coord_em && (
-                      <span>• Recebida Coord.: {formatarDataHoraBR(d.recebido_coord_em)}</span>
-                    )}
-                    {d.encaminhado_em && (
-                      <span>• Encaminhada: {formatarDataHoraBR(d.encaminhado_em)}</span>
-                    )}
-                  </div>
                 </div>
 
-                {/* Ações do Fluxo */}
-                <div className="pt-3 border-t border-slate-800 space-y-3">
-                  {/* Ações da Coordenadora */}
-                  {isCoordenador && d.status !== 'CONCLUIDA' && (
-                    <div className="space-y-2.5">
+                {/* Rodapé de Ações (oculto para perfil SOLICITANTE, que apenas visualiza o histórico) */}
+                {!isSolicitante && (
+                  <div className="pt-3 border-t border-slate-800 space-y-3">
+                    {d.status !== 'CONCLUIDA' && (
                       <div className="flex items-center gap-2 flex-wrap">
-                        {d.status === 'ENVIADA_COORDENACAO' && (
+                        {isCoordenador && d.status === 'ENVIADA_COORDENACAO' && (
                           <button
                             type="button"
                             onClick={() => handleReceberCoordenacao(d.id)}
@@ -537,164 +715,228 @@ export default function Demandas({
                           </button>
                         )}
 
-                        {['ENVIADA_COORDENACAO', 'RECEBIDA_COORDENACAO', 'DEVOLVIDA_COORDENACAO'].includes(
-                          d.status
-                        ) && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEncaminhandoId(encaminhandoId === d.id ? null : d.id);
-                              setResponsavelId(
-                                d.responsavel_id || colaboradoresAtivos[0]?.id || ''
-                              );
-                              setParecerCoord('');
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#085041] hover:bg-[#1D9E75] text-white text-xs font-semibold cursor-pointer"
-                          >
-                            <UserCheck className="w-3.5 h-3.5" />
-                            Encaminhar p/ Responsável
-                          </button>
-                        )}
-
-                        {d.status === 'DEVOLVIDA_COORDENACAO' && (
-                          <button
-                            type="button"
-                            onClick={() => handleConcluir(d.id)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer ml-auto"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            Concluir Fluxo
-                          </button>
-                        )}
-                      </div>
-
-                      {encaminhandoId === d.id && (
-                        <div className="p-3 rounded-xl bg-slate-950 border border-[#1D9E75]/50 space-y-2.5">
-                          <div>
-                            <label className="block text-[11px] font-semibold text-emerald-300 mb-1">
-                              Colaborador Responsável *
-                            </label>
-                            <select
-                              value={responsavelId}
-                              onChange={(e) => setResponsavelId(e.target.value)}
-                              className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
-                            >
-                              {colaboradoresAtivos.map((u) => (
-                                <option key={u.id} value={u.id}>
-                                  {u.nome} ({u.cargo})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] text-slate-300 mb-1">
-                              Despacho / Orientação da Coordenação
-                            </label>
-                            <input
-                              type="text"
-                              value={parecerCoord}
-                              onChange={(e) => setParecerCoord(e.target.value)}
-                              placeholder="Ex: Priorizar agendamento ou entrar em contato com o paciente"
-                              className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
-                            />
-                          </div>
-
-                          <div className="flex justify-end gap-2">
+                        {isCoordenador &&
+                          [
+                            'ENVIADA_COORDENACAO',
+                            'RECEBIDA_COORDENACAO',
+                            'DEVOLVIDA_COORDENACAO'
+                          ].includes(d.status) && (
                             <button
                               type="button"
-                              onClick={() => setEncaminhandoId(null)}
-                              className="px-3 py-1.5 rounded-lg text-xs bg-slate-800 text-slate-300 cursor-pointer"
+                              onClick={() => {
+                                setEncaminhandoId(encaminhandoId === d.id ? null : d.id);
+                                setResponsavelId(
+                                  d.responsavel_id || colaboradoresAtivos[0]?.id || ''
+                                );
+                                setParecerCoord('');
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#085041] hover:bg-[#1D9E75] text-white text-xs font-semibold cursor-pointer"
                             >
-                              Cancelar
+                              <UserCheck className="w-3.5 h-3.5" />
+                              Encaminhar p/ Responsável
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleEncaminhar(d.id)}
-                              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[#1D9E75] text-white cursor-pointer"
-                            >
-                              Confirmar Encaminhamento
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                          )}
 
-                  {/* Ações do Colaborador Responsável */}
-                  {ehResponsavel && ['ENCAMINHADA', 'EM_EXECUCAO'].includes(d.status) && (
-                    <div className="space-y-2.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {d.status === 'ENCAMINHADA' && (
+                        {ehResponsavel && d.status === 'ENCAMINHADA' && (
                           <button
                             type="button"
                             onClick={() => handleIniciarExecucao(d.id)}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/20 text-purple-200 border border-purple-400/40 text-xs font-semibold cursor-pointer"
                           >
-                            <Play className="w-3.5 h-3.5" /> Iniciar Atendimento
+                            <Play className="w-3.5 h-3.5" /> Iniciar
                           </button>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDevolvendoId(devolvendoId === d.id ? null : d.id);
-                            setParecerResp('');
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-[#085041] to-[#1D9E75] text-white text-xs font-semibold cursor-pointer ml-auto"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" /> Devolver à Coordenação
-                        </button>
-                      </div>
+                        {podeGerirMarcacao &&
+                          !['AGUARDANDO_MARCACAO', 'MARCADO'].includes(d.status) && (
+                            <button
+                              type="button"
+                              onClick={() => handleAguardandoMarcacao(d.id)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500/20 hover:bg-orange-500/30 text-orange-200 border border-orange-400/40 text-xs font-semibold cursor-pointer"
+                            >
+                              <CalendarClock className="w-3.5 h-3.5" />
+                              Aguardando Marcação
+                            </button>
+                          )}
 
-                      {devolvendoId === d.id && (
-                        <div className="p-3 rounded-xl bg-slate-950 border border-[#C8963C]/50 space-y-2">
-                          <label className="block text-[11px] font-semibold text-[#f0cc82]">
-                            Parecer / Resolução para a Coordenação *
+                        {podeGerirMarcacao && d.status !== 'MARCADO' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMarcandoId(marcandoId === d.id ? null : d.id);
+                              setDetalhesMarcacao('');
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-600/80 hover:bg-teal-500 text-white text-xs font-semibold cursor-pointer"
+                          >
+                            <CalendarCheck2 className="w-3.5 h-3.5" />
+                            Marcar
+                          </button>
+                        )}
+
+                        {ehResponsavel &&
+                          ['ENCAMINHADA', 'EM_EXECUCAO', 'AGUARDANDO_MARCACAO', 'MARCADO'].includes(
+                            d.status
+                          ) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDevolvendoId(devolvendoId === d.id ? null : d.id);
+                                setParecerResp('');
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[#f0cc82] border border-[#C8963C]/40 text-xs font-semibold cursor-pointer"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" /> Devolver Coordenação
+                            </button>
+                          )}
+
+                        {isCoordenador &&
+                          ['DEVOLVIDA_COORDENACAO', 'MARCADO'].includes(d.status) && (
+                            <button
+                              type="button"
+                              onClick={() => handleConcluir(d.id)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer ml-auto"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              Concluir
+                            </button>
+                          )}
+                      </div>
+                    )}
+
+                    {/* Form: Registrar Detalhes da Marcação */}
+                    {marcandoId === d.id && (
+                      <div className="p-3 rounded-xl bg-slate-950 border border-teal-500/50 space-y-2">
+                        <label className="block text-[11px] font-semibold text-teal-300">
+                          Detalhes do Agendamento / Marcação (visível ao Solicitante)
+                        </label>
+                        <input
+                          type="text"
+                          value={detalhesMarcacao}
+                          onChange={(e) => setDetalhesMarcacao(e.target.value)}
+                          placeholder="Ex: Marcado para 02/12/2026 às 09:00 — PAM Salgadinho Sede"
+                          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setMarcandoId(null)}
+                            className="px-3 py-1.5 rounded-lg text-xs bg-slate-800 text-slate-300 cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMarcarDemanda(d.id)}
+                            className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-teal-600 text-white cursor-pointer"
+                          >
+                            Confirmar Marcado
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Form: Encaminhar para Responsável */}
+                    {encaminhandoId === d.id && (
+                      <div className="p-3 rounded-xl bg-slate-950 border border-[#1D9E75]/50 space-y-2.5">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-emerald-300 mb-1">
+                            Colaborador Responsável *
                           </label>
-                          <textarea
-                            rows={2}
-                            value={parecerResp}
-                            onChange={(e) => setParecerResp(e.target.value)}
-                            placeholder="Descreva a providência tomada..."
+                          <select
+                            value={responsavelId}
+                            onChange={(e) => setResponsavelId(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
+                          >
+                            {colaboradoresAtivos.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.nome} ({u.cargo})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] text-slate-300 mb-1">
+                            Despacho / Orientação da Coordenação
+                          </label>
+                          <input
+                            type="text"
+                            value={parecerCoord}
+                            onChange={(e) => setParecerCoord(e.target.value)}
+                            placeholder="Ex: Providenciar marcação na especialidade solicitada"
                             className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
                           />
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setDevolvendoId(null)}
-                              className="px-3 py-1.5 rounded-lg text-xs bg-slate-800 text-slate-300 cursor-pointer"
-                            >
-                              Cancelar
-                            </button>
-                            <button
-                              type="button"
-                              disabled={!parecerResp.trim()}
-                              onClick={() => handleDevolverCoordenacao(d.id)}
-                              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[#1D9E75] text-white disabled:opacity-50 cursor-pointer"
-                            >
-                              Enviar Retorno
-                            </button>
-                          </div>
                         </div>
-                      )}
-                    </div>
-                  )}
 
-                  {!isCoordenador && !ehResponsavel && d.status !== 'CONCLUIDA' && (
-                    <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-amber-300" />
-                      Status atual: <strong className="text-slate-200">{st.label}</strong>
-                    </p>
-                  )}
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEncaminhandoId(null)}
+                            className="px-3 py-1.5 rounded-lg text-xs bg-slate-800 text-slate-300 cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEncaminhar(d.id)}
+                            className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[#1D9E75] text-white cursor-pointer"
+                          >
+                            Confirmar Encaminhamento
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
-                  {d.status === 'CONCLUIDA' && (
-                    <p className="text-[11px] text-emerald-300 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Fluxo concluído em {formatarDataHoraBR(d.concluido_em)}.
-                    </p>
-                  )}
-                </div>
+                    {/* Form: Devolver à Coordenação */}
+                    {devolvendoId === d.id && (
+                      <div className="p-3 rounded-xl bg-slate-950 border border-[#C8963C]/50 space-y-2">
+                        <label className="block text-[11px] font-semibold text-[#f0cc82]">
+                          Parecer / Resolução para a Coordenação *
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={parecerResp}
+                          onChange={(e) => setParecerResp(e.target.value)}
+                          placeholder="Descreva a providência tomada..."
+                          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setDevolvendoId(null)}
+                            className="px-3 py-1.5 rounded-lg text-xs bg-slate-800 text-slate-300 cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!parecerResp.trim()}
+                            onClick={() => handleDevolverCoordenacao(d.id)}
+                            className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[#1D9E75] text-white disabled:opacity-50 cursor-pointer"
+                          >
+                            Enviar Retorno
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {d.status === 'CONCLUIDA' && (
+                      <p className="text-[11px] text-emerald-300 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Fluxo concluído em {formatarDataHoraBR(d.concluido_em)}.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {isSolicitante && (
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+                    <span className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-[#1D9E75]" />
+                      Status atual: <strong className="text-white">{st.label}</strong>
+                    </span>
+                  </div>
+                )}
               </div>
             );
           })}

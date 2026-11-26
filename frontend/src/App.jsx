@@ -45,10 +45,23 @@ function SistemaAutenticado() {
     }, 3500);
   }, []);
 
+  // Redireciona automaticamente o perfil SOLICITANTE exclusivamente para o Fluxo de Demandas
+  useEffect(() => {
+    if (usuario?.perfil === 'SOLICITANTE') {
+      setAbaAtiva('demandas');
+    }
+  }, [usuario]);
+
   const carregarDados = useCallback(async () => {
     if (!usuario) return;
     setCarregandoDados(true);
     try {
+      if (usuario.perfil === 'SOLICITANTE') {
+        const respDemandas = await api.get('/demandas');
+        setDemandas(respDemandas.data);
+        return;
+      }
+
       const requisicoes = [
         api.get('/acompanhamentos'),
         api.get('/procedimentos'),
@@ -82,7 +95,7 @@ function SistemaAutenticado() {
   }, [carregarDados]);
 
   const badgeTarefas = useMemo(() => {
-    if (!usuario) return 0;
+    if (!usuario || usuario.perfil === 'SOLICITANTE') return 0;
     if (usuario.perfil === 'ADMIN') {
       return tarefas.filter((t) => t.status === 'DEVOLVIDA').length;
     }
@@ -93,6 +106,9 @@ function SistemaAutenticado() {
 
   const badgeDemandas = useMemo(() => {
     if (!usuario) return 0;
+    if (usuario.perfil === 'SOLICITANTE') {
+      return demandas.filter((d) => d.status !== 'CONCLUIDA').length;
+    }
     if (usuario.perfil === 'ADMIN') {
       return demandas.filter((d) =>
         ['ENVIADA_COORDENACAO', 'RECEBIDA_COORDENACAO', 'DEVOLVIDA_COORDENACAO'].includes(d.status)
@@ -100,7 +116,8 @@ function SistemaAutenticado() {
     }
     return demandas.filter(
       (d) =>
-        d.responsavel_id === usuario.id && ['ENCAMINHADA', 'EM_EXECUCAO'].includes(d.status)
+        d.responsavel_id === usuario.id &&
+        ['ENCAMINHADA', 'EM_EXECUCAO', 'AGUARDANDO_MARCACAO'].includes(d.status)
     ).length;
   }, [demandas, usuario]);
 
@@ -154,6 +171,9 @@ function SistemaAutenticado() {
 
   if (!usuario) return <Login />;
 
+  const isSolicitante = usuario.perfil === 'SOLICITANTE';
+  const abaEfetiva = isSolicitante ? 'demandas' : abaAtiva;
+
   const pacienteSelecionado = acompanhamentos.find((a) => a.id === detalhePacienteId) || null;
   const usuarioSelecionado = usuarios.find((u) => u.id === detalheUsuarioId) || null;
   const pacienteTransicao = modalTransicao
@@ -164,7 +184,7 @@ function SistemaAutenticado() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex">
       <Sidebar
         usuario={usuario}
-        abaAtiva={abaAtiva}
+        abaAtiva={abaEfetiva}
         setAbaAtiva={setAbaAtiva}
         badgeTarefas={badgeTarefas}
         badgeDemandas={badgeDemandas}
@@ -175,19 +195,19 @@ function SistemaAutenticado() {
 
       <div className="flex-1 flex flex-col min-w-0">
         <Header
-          abaAtiva={abaAtiva}
+          abaAtiva={abaEfetiva}
           usuario={usuario}
           onAbrirMenu={() => setMenuMobileAberto(true)}
         />
 
         <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto">
-          {carregandoDados && acompanhamentos.length === 0 ? (
+          {carregandoDados && acompanhamentos.length === 0 && demandas.length === 0 ? (
             <div className="text-center py-16 text-sm text-slate-400">
               Carregando dados do PostgreSQL (Neon)...
             </div>
           ) : (
             <>
-              {abaAtiva === 'dashboard' && (
+              {abaEfetiva === 'dashboard' && !isSolicitante && (
                 <Dashboard
                   acompanhamentos={acompanhamentos}
                   onIrParaFila={(st) => {
@@ -200,7 +220,7 @@ function SistemaAutenticado() {
                 />
               )}
 
-              {abaAtiva === 'fila' && (
+              {abaEfetiva === 'fila' && !isSolicitante && (
                 <FilaPacientes
                   acompanhamentos={acompanhamentos}
                   procedimentos={procedimentos}
@@ -217,7 +237,7 @@ function SistemaAutenticado() {
                 />
               )}
 
-              {abaAtiva === 'agenda' && (
+              {abaEfetiva === 'agenda' && !isSolicitante && (
                 <Agenda
                   agendas={agendas}
                   procedimentos={procedimentos}
@@ -228,19 +248,19 @@ function SistemaAutenticado() {
                 />
               )}
 
-              {abaAtiva === 'demandas' && (
+              {abaEfetiva === 'demandas' && (
                 <Demandas
                   demandas={demandas}
                   usuarios={usuarios}
                   acompanhamentos={acompanhamentos}
                   usuarioLogado={usuario}
                   onRecarregar={carregarDados}
-                  onVerPaciente={setDetalhePacienteId}
+                  onVerPaciente={isSolicitante ? null : setDetalhePacienteId}
                   onNotificar={notificar}
                 />
               )}
 
-              {abaAtiva === 'tarefas' && (
+              {abaEfetiva === 'tarefas' && !isSolicitante && (
                 <Tarefas
                   tarefas={tarefas}
                   usuarios={usuarios}
@@ -250,7 +270,7 @@ function SistemaAutenticado() {
                 />
               )}
 
-              {abaAtiva === 'novo' && (
+              {abaEfetiva === 'novo' && !isSolicitante && (
                 <NovoAcompanhamento
                   procedimentos={procedimentos}
                   onSalvo={async (nome) => {
@@ -263,7 +283,7 @@ function SistemaAutenticado() {
                 />
               )}
 
-              {abaAtiva === 'procedimentos' && (
+              {abaEfetiva === 'procedimentos' && !isSolicitante && (
                 <Procedimentos
                   procedimentos={procedimentos}
                   onRecarregar={carregarDados}
@@ -271,7 +291,7 @@ function SistemaAutenticado() {
                 />
               )}
 
-              {abaAtiva === 'usuarios' && usuario.perfil === 'ADMIN' && (
+              {abaEfetiva === 'usuarios' && usuario.perfil === 'ADMIN' && (
                 <Usuarios
                   usuarios={usuarios}
                   usuarioLogado={usuario}
@@ -285,11 +305,11 @@ function SistemaAutenticado() {
         </main>
       </div>
 
-      {pacienteSelecionado && (
+      {pacienteSelecionado && !isSolicitante && (
         <PacienteDetalheModal
           paciente={pacienteSelecionado}
           usuarioLogado={usuario}
-          colaboradores={usuarios.filter((u) => u.ativo && u.id !== usuario.id)}
+          colaboradores={usuarios.filter((u) => u.ativo && u.id !== usuario.id && u.perfil !== 'SOLICITANTE')}
           onFechar={() => setDetalhePacienteId(null)}
           onAtualizado={carregarDados}
           onAlternarAviso={() => handleAlternarAviso(pacienteSelecionado.id)}
@@ -309,7 +329,7 @@ function SistemaAutenticado() {
         />
       )}
 
-      {modalTransicao && pacienteTransicao && (
+      {modalTransicao && pacienteTransicao && !isSolicitante && (
         <TransicaoStatusModal
           paciente={pacienteTransicao}
           statusDestino={modalTransicao.statusDestino}
@@ -318,7 +338,7 @@ function SistemaAutenticado() {
         />
       )}
 
-      {usuarioSelecionado && (
+      {usuarioSelecionado && usuario.perfil === 'ADMIN' && (
         <UsuarioDetalheModal
           usuario={usuarioSelecionado}
           onFechar={() => setDetalheUsuarioId(null)}

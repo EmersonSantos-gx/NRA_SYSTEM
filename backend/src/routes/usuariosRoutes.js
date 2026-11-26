@@ -6,6 +6,8 @@ const { autenticar, apenasAdmin } = require('../middlewares/authMiddleware');
 const router = express.Router();
 router.use(autenticar);
 
+const PERFIS_PERMITIDOS = ['ADMIN', 'OPERADOR', 'SOLICITANTE'];
+
 // GET /api/usuarios — Lista equipe com contagem total de atividades
 router.get('/', apenasAdmin, async (req, res) => {
   try {
@@ -16,6 +18,8 @@ router.get('/', apenasAdmin, async (req, res) => {
           SELECT COUNT(*)::int FROM historico_auditoria h WHERE h.usuario_id = u.id
         ) + (
           SELECT COUNT(*)::int FROM tarefas t WHERE t.coordenador_id = u.id OR t.colaborador_id = u.id
+        ) + (
+          SELECT COUNT(*)::int FROM demandas_fluxo d WHERE d.solicitante_id = u.id OR d.responsavel_id = u.id
         ) AS total_movimentacoes
       FROM usuarios u
       ORDER BY u.criado_em ASC
@@ -27,7 +31,7 @@ router.get('/', apenasAdmin, async (req, res) => {
   }
 });
 
-// GET /api/usuarios/:id/acoes — Log unificado de atividades (Auditoria Clínica + Tarefas)
+// GET /api/usuarios/:id/acoes — Log unificado de atividades
 router.get('/:id/acoes', apenasAdmin, async (req, res) => {
   try {
     const { rows } = await db.query(
@@ -56,6 +60,17 @@ router.get('/:id/acoes', apenasAdmin, async (req, res) => {
           COALESCE(t.finalizado_em, t.iniciado_em, t.recebido_em, t.criado_em) AS data_hora
         FROM tarefas t
         WHERE t.coordenador_id = $1 OR t.colaborador_id = $1
+
+        UNION ALL
+
+        SELECT
+          d.id::text AS id,
+          'DEMANDA' AS tipo,
+          d.protocolo || ' - ' || d.titulo AS referencia,
+          'Fluxo de demanda (' || d.status || ')' AS descricao,
+          COALESCE(d.concluido_em, d.marcado_em, d.encaminhado_em, d.recebido_coord_em, d.criado_em) AS data_hora
+        FROM demandas_fluxo d
+        WHERE d.solicitante_id = $1 OR d.responsavel_id = $1
       ) log_unificado
       ORDER BY data_hora DESC
       LIMIT 30`,
@@ -68,7 +83,7 @@ router.get('/:id/acoes', apenasAdmin, async (req, res) => {
   }
 });
 
-// POST /api/usuarios — Cria novo usuário autorizado
+// POST /api/usuarios — Cria novo usuário autorizado (ADMIN, OPERADOR ou SOLICITANTE)
 router.post('/', apenasAdmin, async (req, res) => {
   try {
     const { nome, email, senha, cargo, perfil } = req.body;
@@ -76,14 +91,21 @@ router.post('/', apenasAdmin, async (req, res) => {
       return res.status(400).json({ erro: 'Nome, e-mail e senha são obrigatórios.' });
     }
 
-    const perfilValido = perfil === 'ADMIN' ? 'ADMIN' : 'OPERADOR';
+    const perfilValido = PERFIS_PERMITIDOS.includes(perfil) ? perfil : 'OPERADOR';
     const senhaHash = await bcrypt.hash(senha, 10);
+
+    const cargoPadrao =
+      perfilValido === 'SOLICITANTE'
+        ? 'Solicitante de Demandas'
+        : perfilValido === 'ADMIN'
+          ? 'Coordenador(a) de Regulação'
+          : 'Técnico em Regulação';
 
     const { rows } = await db.query(
       `INSERT INTO usuarios (nome, email, senha_hash, cargo, perfil, ativo)
        VALUES ($1, LOWER($2), $3, $4, $5, TRUE)
        RETURNING id, nome, email, cargo, perfil, ativo, criado_em`,
-      [nome.trim(), email.trim(), senhaHash, cargo?.trim() || 'Técnico em Regulação', perfilValido]
+      [nome.trim(), email.trim(), senhaHash, cargo?.trim() || cargoPadrao, perfilValido]
     );
 
     return res.status(201).json(rows[0]);
@@ -104,7 +126,7 @@ router.put('/:id', apenasAdmin, async (req, res) => {
       return res.status(400).json({ erro: 'Nome e e-mail são obrigatórios.' });
     }
 
-    const perfilValido = perfil === 'ADMIN' ? 'ADMIN' : 'OPERADOR';
+    const perfilValido = PERFIS_PERMITIDOS.includes(perfil) ? perfil : 'OPERADOR';
 
     if (req.params.id === req.usuario.id && perfilValido !== 'ADMIN') {
       return res.status(400).json({ erro: 'Você não pode rebaixar o seu próprio perfil de Administrador.' });

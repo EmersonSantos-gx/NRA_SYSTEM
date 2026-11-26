@@ -22,18 +22,29 @@ export default function Sidebar({
   setMenuMobileAberto,
   onLogout
 }) {
-  const itens = [
-    { id: 'dashboard', label: 'Dashboard', Icon: BarChart3 },
-    { id: 'fila', label: 'Fila de Pacientes', Icon: Activity },
-    { id: 'agenda', label: 'Agenda', Icon: CalendarDays },
-    { id: 'demandas', label: 'Fluxo de Demandas', Icon: GitPullRequestArrow, badge: badgeDemandas },
-    { id: 'tarefas', label: 'Tarefas', Icon: ClipboardList, badge: badgeTarefas },
-    { id: 'novo', label: 'Novo Acompanhamento', Icon: UserPlus },
-    { id: 'procedimentos', label: 'Procedimentos', Icon: Stethoscope },
-    ...(usuario?.perfil === 'ADMIN'
-      ? [{ id: 'usuarios', label: 'Usuários Autorizados', Icon: Users }]
-      : [])
-  ];
+  const isSolicitante = usuario?.perfil === 'SOLICITANTE';
+
+  const itens = isSolicitante
+    ? [{ id: 'demandas', label: 'Fluxo de Demandas', Icon: GitPullRequestArrow, badge: badgeDemandas }]
+    : [
+        { id: 'dashboard', label: 'Dashboard', Icon: BarChart3 },
+        { id: 'fila', label: 'Fila de Pacientes', Icon: Activity },
+        { id: 'agenda', label: 'Agenda', Icon: CalendarDays },
+        { id: 'demandas', label: 'Fluxo de Demandas', Icon: GitPullRequestArrow, badge: badgeDemandas },
+        { id: 'tarefas', label: 'Tarefas', Icon: ClipboardList, badge: badgeTarefas },
+        { id: 'novo', label: 'Novo Acompanhamento', Icon: UserPlus },
+        { id: 'procedimentos', label: 'Procedimentos', Icon: Stethoscope },
+        ...(usuario?.perfil === 'ADMIN'
+          ? [{ id: 'usuarios', label: 'Usuários Autorizados', Icon: Users }]
+          : [])
+      ];
+
+  const labelPerfil =
+    usuario?.perfil === 'ADMIN'
+      ? 'Coordenador (Admin)'
+      : usuario?.perfil === 'SOLICITANTE'
+        ? 'Solicitante (Fluxo)'
+        : 'Colaborador';
 
   return (
     <>
@@ -56,7 +67,7 @@ export default function Sidebar({
                 <Shield className="w-5 h-5 text-[#f0cc82]" />
               </div>
               <div>
-                <h1 className="text-base font-bold text-white leading-tight">RegulaSUS</h1>
+                <h1 className="text-base font-bold text-white leading-tight">NRA</h1>
                 <p className="text-[11px] text-slate-400">Central de Regulação</p>
               </div>
             </div>
@@ -110,7 +121,7 @@ export default function Sidebar({
             <div className="min-w-0">
               <p className="text-xs font-semibold text-white truncate">{usuario?.nome}</p>
               <p className="text-[10px] text-[#f0cc82] uppercase tracking-wider font-semibold">
-                {usuario?.perfil === 'ADMIN' ? 'Coordenador (Admin)' : 'Colaborador'}
+                {labelPerfil}
               </p>
             </div>
             <button

@@ -2,6 +2,21 @@ import { useState } from 'react';
 import { Edit3, KeyRound, History, Trash2, Power } from 'lucide-react';
 import api from '../services/api';
 
+const PERFIL_BADGE = {
+  ADMIN: {
+    label: 'Coordenador (ADMIN)',
+    cls: 'bg-[#C8963C]/20 text-[#f0cc82] border-[#C8963C]/45'
+  },
+  OPERADOR: {
+    label: 'Colaborador (OPERADOR)',
+    cls: 'bg-sky-500/15 text-sky-300 border-sky-400/35'
+  },
+  SOLICITANTE: {
+    label: 'Solicitante (Apenas Fluxo)',
+    cls: 'bg-purple-500/15 text-purple-200 border-purple-400/40'
+  }
+};
+
 export default function Usuarios({
   usuarios,
   usuarioLogado,
@@ -9,25 +24,21 @@ export default function Usuarios({
   onVerDetalhes,
   onNotificar
 }) {
-  // 1. Estados do formulário de criação de novo usuário
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [cargo, setCargo] = useState('');
   const [perfil, setPerfil] = useState('OPERADOR');
   const [senha, setSenha] = useState('');
 
-  // 2. Estados do modal de edição cadastral
   const [usuarioEditando, setUsuarioEditando] = useState(null);
   const [editNome, setEditNome] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editCargo, setEditCargo] = useState('');
   const [editPerfil, setEditPerfil] = useState('OPERADOR');
 
-  // 3. Estados do modal de redefinição de senha
   const [usuarioSenha, setUsuarioSenha] = useState(null);
   const [novaSenha, setNovaSenha] = useState('');
 
-  // Cadastrar novo usuário autorizado
   async function handleCadastrar(e) {
     e.preventDefault();
     try {
@@ -43,7 +54,6 @@ export default function Usuarios({
     }
   }
 
-  // Abrir modal de edição preenchido
   function abrirModalEdicao(usuario) {
     setUsuarioEditando(usuario);
     setEditNome(usuario.nome);
@@ -52,7 +62,6 @@ export default function Usuarios({
     setEditPerfil(usuario.perfil);
   }
 
-  // Salvar alterações do usuário
   async function handleSalvarEdicao(e) {
     e.preventDefault();
     if (!usuarioEditando) return;
@@ -71,7 +80,6 @@ export default function Usuarios({
     }
   }
 
-  // Salvar nova senha
   async function handleSalvarSenha(e) {
     e.preventDefault();
     if (!usuarioSenha || !novaSenha.trim()) return;
@@ -85,7 +93,6 @@ export default function Usuarios({
     }
   }
 
-  // Ativar ou desativar acesso
   async function handleAlternarStatus(usuario) {
     try {
       await api.patch(`/usuarios/${usuario.id}/status`);
@@ -96,7 +103,6 @@ export default function Usuarios({
     }
   }
 
-  // Excluir usuário permanentemente
   async function handleExcluir(usuario) {
     const confirmou = window.confirm(
       `Tem certeza que deseja excluir permanentemente o usuário "${usuario.nome}"?`
@@ -114,7 +120,6 @@ export default function Usuarios({
 
   return (
     <div className="space-y-6">
-      {/* BLOCO 1: Formulário de Novo Acesso */}
       <form
         onSubmit={handleCadastrar}
         className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end shadow-xl"
@@ -149,7 +154,7 @@ export default function Usuarios({
             type="text"
             value={cargo}
             onChange={(e) => setCargo(e.target.value)}
-            placeholder="Técnico em Regulação"
+            placeholder="Ex: Solicitante / Recepção"
             className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
           />
         </div>
@@ -168,13 +173,14 @@ export default function Usuarios({
         </div>
 
         <div>
-          <label className="block text-xs text-slate-300 mb-1">Perfil</label>
+          <label className="block text-xs text-slate-300 mb-1">Perfil de Acesso</label>
           <select
             value={perfil}
             onChange={(e) => setPerfil(e.target.value)}
             className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
           >
-            <option value="OPERADOR">Colaborador</option>
+            <option value="OPERADOR">Colaborador (Geral)</option>
+            <option value="SOLICITANTE">Solicitante (Apenas Fluxo)</option>
             <option value="ADMIN">Coordenador (Admin)</option>
           </select>
         </div>
@@ -187,10 +193,9 @@ export default function Usuarios({
         </button>
       </form>
 
-      {/* BLOCO 2: Tabela de Usuários Cadastrados */}
       <div className="bg-slate-900/75 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
         <div className="px-5 py-3.5 border-b border-slate-800 text-xs text-slate-400">
-          Gerencie edição, redefinição de senha, log de atividades e exclusão de acessos.
+          O perfil <strong className="text-purple-300">Solicitante (Apenas Fluxo)</strong> acessa exclusivamente a aba de envio e acompanhamento de demandas.
         </div>
 
         <div className="overflow-x-auto">
@@ -207,6 +212,7 @@ export default function Usuarios({
             <tbody className="divide-y divide-slate-800/70 text-xs sm:text-sm">
               {usuarios.map((u) => {
                 const ehProprio = u.id === usuarioLogado.id;
+                const badge = PERFIL_BADGE[u.perfil] || PERFIL_BADGE.OPERADOR;
                 return (
                   <tr key={u.id} className="hover:bg-slate-800/40">
                     <td className="py-3.5 px-4">
@@ -223,13 +229,9 @@ export default function Usuarios({
 
                     <td className="py-3.5 px-4">
                       <span
-                        className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
-                          u.perfil === 'ADMIN'
-                            ? 'bg-[#C8963C]/20 text-[#f0cc82] border-[#C8963C]/45'
-                            : 'bg-sky-500/15 text-sky-300 border-sky-400/35'
-                        }`}
+                        className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${badge.cls}`}
                       >
-                        {u.perfil}
+                        {badge.label}
                       </span>
                     </td>
 
@@ -305,7 +307,6 @@ export default function Usuarios({
         </div>
       </div>
 
-      {/* BLOCO 3: Modal de Edição de Usuário */}
       {usuarioEditando && (
         <div
           className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
@@ -359,7 +360,8 @@ export default function Usuarios({
                   disabled={usuarioEditando.id === usuarioLogado.id}
                   className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white disabled:opacity-60"
                 >
-                  <option value="OPERADOR">Colaborador (OPERADOR)</option>
+                  <option value="OPERADOR">Colaborador (Geral)</option>
+                  <option value="SOLICITANTE">Solicitante (Apenas Fluxo)</option>
                   <option value="ADMIN">Coordenador (ADMIN)</option>
                 </select>
               </div>
@@ -384,7 +386,6 @@ export default function Usuarios({
         </div>
       )}
 
-      {/* BLOCO 4: Modal de Redefinição de Senha */}
       {usuarioSenha && (
         <div
           className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
