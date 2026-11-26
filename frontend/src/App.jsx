@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import FilaPacientes from './pages/FilaPacientes';
 import Agenda from './pages/Agenda';
+import Demandas from './pages/Demandas';
 import Tarefas from './pages/Tarefas';
 import NovoAcompanhamento from './pages/NovoAcompanhamento';
 import Procedimentos from './pages/Procedimentos';
@@ -24,15 +25,14 @@ function SistemaAutenticado() {
   const [filtroStatusFila, setFiltroStatusFila] = useState('TODOS');
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
 
-  // Estados sincronizados com a API (PostgreSQL Neon)
   const [acompanhamentos, setAcompanhamentos] = useState([]);
   const [procedimentos, setProcedimentos] = useState([]);
   const [tarefas, setTarefas] = useState([]);
   const [agendas, setAgendas] = useState([]);
+  const [demandas, setDemandas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [carregandoDados, setCarregandoDados] = useState(false);
 
-  // Modais e notificações
   const [detalhePacienteId, setDetalhePacienteId] = useState(null);
   const [detalheUsuarioId, setDetalheUsuarioId] = useState(null);
   const [modalTransicao, setModalTransicao] = useState(null);
@@ -45,7 +45,6 @@ function SistemaAutenticado() {
     }, 3500);
   }, []);
 
-  // Carrega todos os dados iniciais e após cada alteração
   const carregarDados = useCallback(async () => {
     if (!usuario) return;
     setCarregandoDados(true);
@@ -54,7 +53,8 @@ function SistemaAutenticado() {
         api.get('/acompanhamentos'),
         api.get('/procedimentos'),
         api.get('/tarefas'),
-        api.get('/agendas')
+        api.get('/agendas'),
+        api.get('/demandas')
       ];
       if (usuario.perfil === 'ADMIN') {
         requisicoes.push(api.get('/usuarios'));
@@ -65,9 +65,10 @@ function SistemaAutenticado() {
       setProcedimentos(resultados[1].data);
       setTarefas(resultados[2].data);
       setAgendas(resultados[3].data);
+      setDemandas(resultados[4].data);
 
-      if (usuario.perfil === 'ADMIN' && resultados[4]) {
-        setUsuarios(resultados[4].data);
+      if (usuario.perfil === 'ADMIN' && resultados[5]) {
+        setUsuarios(resultados[5].data);
       }
     } catch (err) {
       notificar(err.response?.data?.erro || 'Erro ao sincronizar dados com o Neon.', 'erro');
@@ -80,7 +81,6 @@ function SistemaAutenticado() {
     carregarDados();
   }, [carregarDados]);
 
-  // Contador exibido na Sidebar para o coordenador ou colaborador
   const badgeTarefas = useMemo(() => {
     if (!usuario) return 0;
     if (usuario.perfil === 'ADMIN') {
@@ -90,6 +90,19 @@ function SistemaAutenticado() {
       ['ATRIBUIDA', 'RECEBIDA', 'EM_ANDAMENTO'].includes(t.status)
     ).length;
   }, [tarefas, usuario]);
+
+  const badgeDemandas = useMemo(() => {
+    if (!usuario) return 0;
+    if (usuario.perfil === 'ADMIN') {
+      return demandas.filter((d) =>
+        ['ENVIADA_COORDENACAO', 'RECEBIDA_COORDENACAO', 'DEVOLVIDA_COORDENACAO'].includes(d.status)
+      ).length;
+    }
+    return demandas.filter(
+      (d) =>
+        d.responsavel_id === usuario.id && ['ENCAMINHADA', 'EM_EXECUCAO'].includes(d.status)
+    ).length;
+  }, [demandas, usuario]);
 
   async function handleAlternarAviso(id) {
     try {
@@ -107,6 +120,16 @@ function SistemaAutenticado() {
       notificar('Procedimento marcado como Realizado.');
     } catch {
       notificar('Erro ao confirmar comparecimento.', 'erro');
+    }
+  }
+
+  async function handleVoltarParaNovo(id) {
+    try {
+      await api.patch(`/acompanhamentos/${id}/status`, { status_destino: 'NOVO' });
+      await carregarDados();
+      notificar('Paciente retornado para a fila como Novo.');
+    } catch (err) {
+      notificar(err.response?.data?.erro || 'Erro ao retornar paciente para Novo.', 'erro');
     }
   }
 
@@ -144,6 +167,7 @@ function SistemaAutenticado() {
         abaAtiva={abaAtiva}
         setAbaAtiva={setAbaAtiva}
         badgeTarefas={badgeTarefas}
+        badgeDemandas={badgeDemandas}
         menuMobileAberto={menuMobileAberto}
         setMenuMobileAberto={setMenuMobileAberto}
         onLogout={logout}
@@ -185,6 +209,7 @@ function SistemaAutenticado() {
                   onVerDetalhes={setDetalhePacienteId}
                   onAlternarAviso={handleAlternarAviso}
                   onConfirmarComparecimento={handleConfirmarComparecimento}
+                  onVoltarParaNovo={handleVoltarParaNovo}
                   onIniciarTransicao={(id, statusDestino) =>
                     setModalTransicao({ id, statusDestino })
                   }
@@ -199,6 +224,18 @@ function SistemaAutenticado() {
                   acompanhamentos={acompanhamentos}
                   usuarioLogado={usuario}
                   onRecarregar={carregarDados}
+                  onNotificar={notificar}
+                />
+              )}
+
+              {abaAtiva === 'demandas' && (
+                <Demandas
+                  demandas={demandas}
+                  usuarios={usuarios}
+                  acompanhamentos={acompanhamentos}
+                  usuarioLogado={usuario}
+                  onRecarregar={carregarDados}
+                  onVerPaciente={setDetalhePacienteId}
                   onNotificar={notificar}
                 />
               )}
@@ -258,6 +295,10 @@ function SistemaAutenticado() {
           onAlternarAviso={() => handleAlternarAviso(pacienteSelecionado.id)}
           onConfirmarComparecimento={() => {
             handleConfirmarComparecimento(pacienteSelecionado.id);
+            setDetalhePacienteId(null);
+          }}
+          onVoltarParaNovo={() => {
+            handleVoltarParaNovo(pacienteSelecionado.id);
             setDetalhePacienteId(null);
           }}
           onIniciarTransicao={(statusDestino) => {

@@ -5,6 +5,7 @@ import {
   ClipboardList,
   UserPlus,
   CalendarDays,
+  GitPullRequestArrow,
   Stethoscope,
   Users,
   LogOut,
@@ -16,6 +17,7 @@ export default function Sidebar({
   abaAtiva,
   setAbaAtiva,
   badgeTarefas,
+  badgeDemandas = 0,
   menuMobileAberto,
   setMenuMobileAberto,
   onLogout
@@ -24,6 +26,7 @@ export default function Sidebar({
     { id: 'dashboard', label: 'Dashboard', Icon: BarChart3 },
     { id: 'fila', label: 'Fila de Pacientes', Icon: Activity },
     { id: 'agenda', label: 'Agenda', Icon: CalendarDays },
+    { id: 'demandas', label: 'Fluxo de Demandas', Icon: GitPullRequestArrow, badge: badgeDemandas },
     { id: 'tarefas', label: 'Tarefas', Icon: ClipboardList, badge: badgeTarefas },
     { id: 'novo', label: 'Novo Acompanhamento', Icon: UserPlus },
     { id: 'procedimentos', label: 'Procedimentos', Icon: Stethoscope },
@@ -123,4 +126,3 @@ export default function Sidebar({
     </>
   );
 }
-    

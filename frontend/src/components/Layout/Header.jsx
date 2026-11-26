@@ -9,6 +9,14 @@ const TITULOS = {
     titulo: 'Fila de Pacientes',
     sub: 'Gestão completa do ciclo clínico, SLA de espera, WhatsApp e registro de faltas'
   },
+  agenda: {
+    titulo: 'Agenda por Profissional',
+    sub: 'Gestão de vagas (slots), alocação de pacientes e confirmação individual via WhatsApp'
+  },
+  demandas: {
+    titulo: 'Fluxo de Demandas',
+    sub: 'Envio de pacientes e solicitações para recebimento da Coordenação e direcionamento ao responsável'
+  },
   tarefas: {
     titulo: 'Tarefas Privadas',
     sub: 'Atribuição exclusiva por colaborador com devolução ao coordenador'
@@ -24,11 +32,7 @@ const TITULOS = {
   usuarios: {
     titulo: 'Usuários Autorizados',
     sub: 'Gestão de acessos da equipe (ADMIN)'
-  },
-  agenda: {
-  titulo: 'Agenda por Profissional',
-  sub: 'Gestão de vagas (slots), alocação de pacientes e confirmação individual via WhatsApp'
-}
+  }
 };
 
 export default function Header({ abaAtiva, usuario, onAbrirMenu }) {
